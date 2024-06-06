@@ -1,0 +1,3 @@
+[submodule "SimpleFaceGen"]
+	path = SimpleFaceGen
+	url = git@github.com:NicEastvillage/SimpleFaceGen.git
