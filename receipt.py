@@ -1,20 +1,29 @@
-from PIL.Image import Transform
 from escpos import *
 from PIL import Image, ImageDraw, ImageFont
 import tabulate
 
-test = False
+test = True
 
 data = {
     "Name": "Captain Haddock's",
-    "Style": "IPA",
+    "Style": "Belgian Dubbel IPA",
     "ABV": "8.4%",
     "OG/FG": "1.070 / 1.006",
     "Bottle date": "2024-05-29",
     "Notes": "Guaranteed swearwords!!!"
 }
+art = "haddock-100-103-crop.png"
 
 out_file = "label.bmp"
+
+# label dimensions
+w = 800
+h = 512
+name_h = 45
+
+h_logo = h - name_h
+pad = 5
+e = 2
 
 # printer model name SRP-350 VER.1.24 2003.02.28
 # measured width of the paper 78, which is 3 inches
@@ -70,6 +79,27 @@ def draw_text_in_box(image, text, box, font_path="arial.ttf"):
     return image
 
 
+def apply_art(image: Image, art_path, bbox) -> Image:
+    # draw image centered based on width of image
+    left, top, right, bot = bbox
+    art = Image.open(art_path)
+    ratio = min(left - right / art.width, (bot - top) / art.height)
+    l_w, l_h = int(art.width * ratio), int(art.height * ratio)
+    art = art.resize((l_w - 4 * e, l_h))
+    art_start_coord = int((right - left - l_w) / 2)
+    return image.paste(art, (left, top))
+
+
+def apply_data_table(image, table, font, bbox):
+    # draw table below image
+    left, top, right, bot = bbox
+    i_table = Image.new('L', (h, right), color="white")
+    d_table = ImageDraw.Draw(i_table)
+    d_table.text((0, 0), table, font=font, fill=0)
+    i_table = i_table.rotate(-90, expand=True)
+    return image.paste(i_table, (0, 0, right, bot))
+
+
 def generate_label(table, art_path, out):
     """
     Generate a homebrewed beer label to be printed.
@@ -78,15 +108,8 @@ def generate_label(table, art_path, out):
     Height (which is width) should be respected to retain font size.
     """
     font_path = "/usr/share/fonts/liberation/LiberationMono-Regular.ttf"
-    font_bold = "/usr/share/fonts/liberation/LiberationMono-Bold.ttf"
+    font_bold = "/usr/share/fonts/liberation/LiberationSans-BoldItalic.ttf"
     font = ImageFont.truetype(font_path, 20)
-
-    w = 800
-    h = 512
-    name_h = 100
-    h_logo = h - name_h
-    pad = 5
-    e = 2
 
     div = 8
     div_space = 2
@@ -95,35 +118,21 @@ def generate_label(table, art_path, out):
     b2 = int(w * (div - div_space) / div)
     b3 = int(w * div / div)
 
-    # create image
+    # create label
     label = Image.new('1', (w, h), color=1)
+    # create draw object
     d = ImageDraw.Draw(label)
 
+    apply_data_table(label, table, font, (0, 0, b1, h))
 
-    # draw image centered based on width of image
-    art = Image.open(art_path)
-    ratio = min(b2 - b1 / art.width, h_logo / art.height)
-    l_w, l_h = int(art.width * ratio), int(art.height * ratio)
-    art = art.resize((l_w, l_h))
-    art_start_coord = int((b2 - b1 - l_w) / 2)
-    label.paste(art, (b1 + art_start_coord, pad + e))
+    apply_art(label, art_path, (b1, pad + e, b2, h_logo))
 
-    # draw name of beer
-    # d.text((b1 + e, h - name_h + 50), data['Name'], font=fnt, align="center", )
     draw_text_in_box(label, data['Name'], (b1 + e, h_logo, b2, h - e), font_bold)
 
-    # draw table below image
-    i_table = Image.new('L', (h, b1), color="white")
-
-    d_table = ImageDraw.Draw(i_table)
-    d_table.text((0, 0), table, font=font, fill=0)
-    i_table = i_table.rotate(-90, expand=True)
-    label.paste(i_table, (0, 0, b1, h))
-
     # draw bounding rectangle
-    d.rectangle([(pad, pad), (b1, h - pad)], outline="black")
-    d.rectangle([(b1, pad), (b2, h - pad)], outline="black")
-    d.rectangle([(b2, pad), (w - pad, h - pad)], outline="black")
+    d.rectangle([(0, 0), (b1, h)], outline="black")
+    d.rectangle([(b1, 0), (b2, h)], outline="black")
+    d.rectangle([(b2, 0), (w, h)], outline="black")
 
     # save image
     label.save(f"{out}")
@@ -142,7 +151,7 @@ def print_label(table_data: dict, image_path: str):
                                   stralign="left",
                                   tablefmt='fancy_outline')
 
-    generate_label(gen_table, "haddock.png", image_path)
+    generate_label(gen_table, art, image_path)
 
     im = Image.open(image_path)
     if test:
