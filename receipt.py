@@ -1,6 +1,7 @@
 from escpos import *
 from PIL import Image, ImageDraw, ImageFont
 import tabulate
+from SimpleFaceGen.face_gen import FaceGen
 
 test = True
 
@@ -12,6 +13,20 @@ data = {
     "Bottle date": "2024-05-29",
     "Notes": "Guaranteed swearwords!!!"
 }
+
+contents = {
+    "Base": "2-Row, 6.5kg",
+    "Spec.": "Special B, 0.5kg",
+    "Add.": "Dextrose, 0.5kg",
+    "Bitter": "Fuggles, 60g",
+    "Mid": "East Kent Goldings, 50g",
+    "Aroma": "Styrian Goldings, 45g"
+}
+
+batch = 6
+bottle = 0
+batch_size = 75
+
 art = "haddock-100-103-crop.png"
 
 out_file = "label.bmp"
@@ -19,9 +34,10 @@ out_file = "label.bmp"
 # label dimensions
 w = 800
 h = 512
-name_h = 45
 
-h_logo = h - name_h
+h_name = 45
+h_art = h - h_name
+h_lot = 25
 pad = 5
 e = 2
 
@@ -39,7 +55,7 @@ if not test:
                        )
 
 
-def draw_text_in_box(image, text, box, font_path="arial.ttf"):
+def apply_text(image, text, box, font_path="arial.ttf"):
     # Unpack the bounding box
     left, top, right, bottom = box
     box_width = right - left
@@ -125,17 +141,32 @@ def generate_label(table, art_path, out):
 
     apply_data_table(label, table, font, (0, 0, b1, h))
 
-    apply_art(label, art_path, (b1, pad + e, b2, h_logo))
+    apply_art(label, art_path, (b1, pad + e, b2, h_art))
 
-    draw_text_in_box(label, data['Name'], (b1 + e, h_logo, b2, h - e), font_bold)
+    apply_text(label, data['Name'], (b1 + e, h_art, b2, h - e), font_bold)
+
+    col_3 = (b3 - b2)
+
+    # apply face
+    face: Image = FaceGen().generate()
+    face = face.resize((col_3, col_3))
+    label.paste(face, (b2, h - col_3))
+
+    # apply bottle/batch
+    apply_text(label, f"no. {bottle}/{batch_size}", (b2, h - h_lot, b3, h - pad), font_path)
+
+    # apply ingredients
+    d.text((b2,0), " ".join(f'{k}: {v}' for k, v in contents.items()))
 
     # draw bounding rectangle
     d.rectangle([(0, 0), (b1, h)], outline="black")
     d.rectangle([(b1, 0), (b2, h)], outline="black")
     d.rectangle([(b2, 0), (w, h)], outline="black")
+    d.rectangle([(b2, h - col_3), (b3, h)], outline="black")
 
     # save image
     label.save(f"{out}")
+    return label
 
 
 def print_label(table_data: dict, image_path: str):
@@ -151,15 +182,14 @@ def print_label(table_data: dict, image_path: str):
                                   stralign="left",
                                   tablefmt='fancy_outline')
 
-    generate_label(gen_table, art, image_path)
+    label = generate_label(gen_table, art, image_path)
 
-    im = Image.open(image_path)
     if test:
-        im.show()
+        label.show()
     else:
         print("Sending to printer")
-        im = im.rotate(90, expand=True)
-        im.save(image_path)
+        label = label.rotate(90, expand=True)
+        label.save(image_path)
         p.image(image_path)
         p.cut()
 
