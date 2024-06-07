@@ -15,17 +15,17 @@ data = {
 }
 
 contents = {
-    "Base": "2-Row, 6.5kg",
-    "Spec.": "Special B, 0.5kg",
-    "Add.": "Dextrose, 0.5kg",
-    "Bitter": "Fuggles, 60g",
-    "Mid": "East Kent Goldings, 50g",
-    "Aroma": "Styrian Goldings, 45g"
+    "Base malt": "2-Row (6.5kg)",
+    "Special malt": "Special B (0.5kg)",
+    "Additions": "Dextrose (0.5kg)",
+    "Bitter": "Fuggles (60g)",
+    "Mid": "East Kent Goldings (50g)",
+    "Aroma": "Styrian Goldings (45g)"
 }
 
 batch = 6
 bottle = 0
-batch_size = 75
+batch_size = 3
 
 art = "haddock-100-103-crop.png"
 
@@ -115,8 +115,51 @@ def apply_data_table(image, table, font, bbox):
     i_table = i_table.rotate(-90, expand=True)
     return image.paste(i_table, (0, 0, right, bot))
 
+def draw_text_in_bbox(image, text, bbox, font_path):
+    left, top, right, bottom = bbox
+    max_width = right - left
+    max_height = bottom - top
 
-def generate_label(table, art_path, out):
+    # Initialize font size
+    font_size = 1
+    font = ImageFont.truetype(font_path, font_size)
+    draw = ImageDraw.Draw(image)
+
+    # Function to wrap text based on width
+    def wrap_text(text, font, max_width):
+        lines = []
+        words = text.split()
+        while words:
+            line = []
+            while words and draw.textbbox((0, 0), ' '.join(line + [words[0]]), font=font)[2] <= max_width:
+                line.append(words.pop(0))
+            lines.append(' '.join(line))
+        return lines
+
+    # Increase font size until it no longer fits within the bbox width
+    while True:
+        test_font = ImageFont.truetype(font_path, font_size + 1)
+        wrapped_text = wrap_text(text, test_font, max_width)
+        test_height = sum([draw.textbbox((0,0), line, test_font)[3] for line in wrapped_text])
+
+        if test_height <= max_height:
+            font_size += 1
+            font = test_font
+        else:
+            break
+
+    # Draw the wrapped text on the image
+    wrapped_text = wrap_text(text, font, max_width)
+    y_text = top
+    for line in wrapped_text:
+        _, _, line_width, line_height = draw.textbbox((0,0), line, font=font)
+        draw.text((left, y_text), line, font=font, fill="black")
+        y_text += line_height
+
+    return image
+
+
+def generate_label(table, art_path, out, bottle_no=0):
     """
     Generate a homebrewed beer label to be printed.
     Style is an ascii table. Due to aspect ratio wishes, image is 1000x512 and in landscape.
@@ -153,15 +196,16 @@ def generate_label(table, art_path, out):
     label.paste(face, (b2, h - col_3))
 
     # apply bottle/batch
-    apply_text(label, f"no. {bottle}/{batch_size}", (b2, h - h_lot, b3, h - pad), font_path)
+    apply_text(label, f"no. {bottle_no}/{batch_size}", (b2, h - h_lot, b3, h - pad), font_path)
 
     # apply ingredients
-    d.text((b2,0), " ".join(f'{k}: {v}' for k, v in contents.items()))
+    draw_text_in_bbox(label, ", ".join(f'{k}: {v}' for k, v in contents.items()), (b2 + pad, 0 + pad, b3, h - col_3- pad), font_path)
 
     # draw bounding rectangle
     d.rectangle([(0, 0), (b1, h)], outline="black")
     d.rectangle([(b1, 0), (b2, h)], outline="black")
     d.rectangle([(b2, 0), (w, h)], outline="black")
+    d.line([(b1 + e, h_art), (b2, h_art)])
     d.rectangle([(b2, h - col_3), (b3, h)], outline="black")
 
     # save image
@@ -169,7 +213,7 @@ def generate_label(table, art_path, out):
     return label
 
 
-def print_label(table_data: dict, image_path: str):
+def print_label(table_data: dict, image_path: str, bottle_no):
     # get first of dict
     key, value = next(iter(table_data.items()))
 
@@ -182,7 +226,7 @@ def print_label(table_data: dict, image_path: str):
                                   stralign="left",
                                   tablefmt='fancy_outline')
 
-    label = generate_label(gen_table, art, image_path)
+    label = generate_label(gen_table, art, image_path, bottle_no)
 
     if test:
         label.show()
@@ -195,5 +239,5 @@ def print_label(table_data: dict, image_path: str):
 
 
 if __name__ == '__main__':
-    for i in range(1):
-        print_label(data, out_file)
+    for i in range(batch_size + 1):
+        print_label(data, out_file, i)
